@@ -1,0 +1,967 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>小魔鬼闯关 · 儿童版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            min-height: 100vh;
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            overflow: hidden;
+            user-select: none;
+        }
+        #header {
+            color: #eee;
+            margin-bottom: 10px;
+            text-align: center;
+        }
+        #header h1 {
+            font-size: 26px;
+            letter-spacing: 2px;
+            color: #ff6b6b;
+            text-shadow: 0 2px 0 #aa2e2e;
+        }
+        .level-info {
+            font-size: 17px;
+            color: #ffd93d;
+            margin-top: 2px;
+            font-weight: 500;
+        }
+        #timer {
+            position: absolute;
+            left: 20px;
+            top: 20px;
+            color: #ffd93d;
+            font-size: 18px;
+            font-weight: 600;
+            background: rgba(0,0,0,0.35);
+            padding: 8px 16px;
+            border-radius: 20px;
+            pointer-events: none;
+        }
+        canvas {
+            border: 4px solid #4a4a6a;
+            border-radius: 14px;
+            background: #16213e;
+            display: block;
+            box-shadow: 0 8px 24px rgba(0,0,0,0.6);
+            width: 800px;
+            height: 500px;
+        }
+        #footer {
+            color: #9a9ab0;
+            font-size: 14px;
+            margin-top: 12px;
+            text-align: center;
+            background: rgba(255,255,255,0.04);
+            padding: 6px 22px;
+            border-radius: 36px;
+            backdrop-filter: blur(2px);
+        }
+        #win-screen {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0,0,0,0.82);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 10;
+            backdrop-filter: blur(6px);
+        }
+        #win-screen.show {
+            display: flex;
+        }
+        #win-screen h2 {
+            font-size: 52px;
+            color: #ffd93d;
+            margin-bottom: 18px;
+            text-shadow: 0 4px 0 #b37b00;
+            letter-spacing: 2px;
+        }
+        #win-screen button {
+            padding: 14px 42px;
+            font-size: 22px;
+            background: #ff6b6b;
+            color: white;
+            border: none;
+            border-radius: 60px;
+            cursor: pointer;
+            margin: 10px;
+            font-weight: 600;
+            transition: transform 0.15s, background 0.2s;
+            box-shadow: 0 6px 0 #aa2e2e;
+        }
+        #win-screen button:hover {
+            background: #ff8787;
+            transform: scale(1.03);
+        }
+        #win-screen button:active {
+            transform: translateY(3px);
+            box-shadow: 0 3px 0 #aa2e2e;
+        }
+        @media (max-width: 840px) {
+            canvas { width: 96vw; height: auto; aspect-ratio: 800/500; }
+            #header h1 { font-size: 20px; }
+            #win-screen h2 { font-size: 34px; }
+        }
+    </style>
+</head>
+<body>
+<div id="header">
+    <h1>👹 小魔鬼闯关</h1>
+    <div class="level-info" id="level-info">第 1 关 / 共 5 关</div>
+</div>
+<div id="timer">时间：0.00 秒</div>
+<canvas id="game" width="800" height="500"></canvas>
+<div id="footer">← → ↑ / WASD 移动 · 空格 / ↑ 跳跃 · 小心尖刺！<button id="music-btn" style="margin-left:14px;padding:4px 12px;border:1px solid #ffd93d;background:rgba(255,217,61,0.15);color:#ffd93d;border-radius:14px;cursor:pointer;font-size:13px;">🔊 音乐</button></div>
+
+<div id="win-screen">
+    <h2 id="win-text">🎉 全部通关！</h2>
+    <div id="win-time" style="font-size:24px;color:#fff;margin-bottom:8px;">通关时间：0.00 秒</div>
+    <div id="win-best" style="font-size:20px;color:#ffd93d;margin-bottom:8px;">最快成绩：--</div>
+    <div id="win-compare" style="font-size:18px;color:#7ec8e3;margin-bottom:12px;"></div>
+    <div id="win-deaths" style="font-size:20px;color:#ff6b6b;margin-bottom:8px;">死亡次数：0 次</div>
+    <div id="win-best-deaths" style="font-size:18px;color:#ffd93d;margin-bottom:8px;">最少死亡：--</div>
+    <div id="win-deaths-compare" style="font-size:16px;color:#7ec8e3;margin-bottom:16px;"></div>
+    <button id="restart-btn">🔄 重新冒险</button>
+</div>
+
+<script>
+    (function(){
+        const canvas = document.getElementById("game");
+        const ctx = canvas.getContext("2d");
+        const W = canvas.width, H = canvas.height;
+        const GRAVITY = 0.6;
+        let currentLevel = 0, deathCount = 0, gameWon = false;
+        let keys = {};
+        let player, platforms, spikes, movingPlatforms, door;
+        let debugFrame = 0; // 调试用帧计数
+        let prevOnMoving = null; // 上一帧所在的移动平台索引
+        let startTime = Date.now();
+        let pauseStartedAt = 0; // 进入死亡/倒计时的时刻
+        let totalTime = 0;
+        let timerRunning = true;
+        let bestTime = parseFloat(localStorage.getItem("levelDevilBestTime")) || Infinity;
+        let bestDeaths = parseInt(localStorage.getItem("levelDevilBestDeaths")) || Infinity;
+
+        // 幻影拖尾配置
+        const PHANTOM = {
+            enabled: true,
+            interval: 1,         // 每隔多少帧生成一个幻影（数值越小越密）
+            maxCount: 28,        // 最多保留的幻影数量
+            fadeStep: 0.05,      // 每帧透明度衰减
+            minAlpha: 0.05,      // 低于此透明度则不再绘制
+            startAlpha: 0.85,    // 新生幻影的初始透明度
+            moveThreshold: 0.2,  // 横向速度超过此值才生成幻影（静止时无幻影）
+            jumpThreshold: 0.3   // 纵向速度绝对值超过此值才生成跳跃幻影
+        };
+        let phantomTrail = [];
+        let phantomFrame = 0;
+
+        // ----- 背景音乐 (Web Audio API 合成近似超级玛丽主题曲) -----
+        let audioCtx = null;
+        let musicEnabled = true;
+        let musicTimer = null;
+        let musicStep = 0;
+        const MASTER_GAIN = 0.12;
+
+        // 频率表 (Hz)
+        const NOTE = {
+            C4: 261.63, D4: 293.66, E4: 329.63, F4: 349.23, G4: 392.00, A4: 440.00, B4: 493.88,
+            C5: 523.25, D5: 587.33, E5: 659.25, F5: 698.46, G5: 783.99, A5: 880.00,
+            C3: 130.81, D3: 146.83, E3: 164.81, F3: 174.61, G3: 196.00, A3: 220.00,
+            REST: 0
+        };
+        // 超级玛丽主题曲 (简化片段，循环播放)
+        // 0 = 休止符
+        const MELODY = [
+            // 第一段
+            [NOTE.E5,8],[NOTE.E5,8],[NOTE.REST,8],[NOTE.E5,8],[NOTE.REST,8],[NOTE.C5,8],[NOTE.E5,8],[NOTE.REST,8],
+            [NOTE.G5,16],[NOTE.REST,16],[NOTE.G4,16],[NOTE.REST,16],
+            [NOTE.C5,16],[NOTE.REST,8],[NOTE.G4,16],[NOTE.REST,8],[NOTE.E4,16],[NOTE.REST,8],
+            [NOTE.A4,8],[NOTE.B4,8],[NOTE.REST,8],[NOTE.A4,8],[NOTE.REST,8],[NOTE.A4*Math.pow(2,1/12),8],[NOTE.A4,8],
+            [NOTE.G4,12],[NOTE.E5,12],[NOTE.G5,12],[NOTE.A5,4],[NOTE.REST,4],
+            [NOTE.F5,8],[NOTE.G5,8],[NOTE.REST,8],[NOTE.E5,8],[NOTE.REST,8],[NOTE.C5,8],[NOTE.D5,8],[NOTE.B4,8],
+            // 第二段
+            [NOTE.C5,8],[NOTE.REST,8],[NOTE.G4,8],[NOTE.REST,8],[NOTE.E4,8],[NOTE.REST,8],
+            [NOTE.A4,8],[NOTE.B4,8],[NOTE.REST,8],[NOTE.A4,8],[NOTE.REST,8],[NOTE.G4,8],[NOTE.E5,8],
+            [NOTE.G5,8],[NOTE.A5,4],[NOTE.REST,4],[NOTE.F5,8],[NOTE.G5,8],[NOTE.REST,8],[NOTE.E5,8],[NOTE.REST,8],
+            [NOTE.C5,8],[NOTE.D5,8],[NOTE.B4,8],[NOTE.REST,8],
+            // 第三段（重复变奏）
+            [NOTE.C5,8],[NOTE.REST,8],[NOTE.G4,8],[NOTE.REST,8],[NOTE.E4,8],[NOTE.REST,8],
+            [NOTE.A4,8],[NOTE.B4,8],[NOTE.REST,8],[NOTE.A4,8],[NOTE.REST,8],[NOTE.G4,8],[NOTE.E5,8],
+            [NOTE.G5,8],[NOTE.A5,4],[NOTE.REST,4],[NOTE.F5,8],[NOTE.G5,8],[NOTE.REST,8],[NOTE.E5,8],[NOTE.REST,8],
+            [NOTE.C5,8],[NOTE.D5,8],[NOTE.B4,8],[NOTE.REST,8]
+        ];
+        const BASS = [
+            [NOTE.C3,16],[NOTE.REST,16],[NOTE.G3,16],[NOTE.REST,16],[NOTE.C3,16],[NOTE.REST,16],[NOTE.G3,16],[NOTE.REST,16],
+            [NOTE.A3,16],[NOTE.REST,16],[NOTE.E3,16],[NOTE.REST,16],[NOTE.A3,16],[NOTE.REST,16],[NOTE.E3,16],[NOTE.REST,16],
+            [NOTE.F3,16],[NOTE.REST,16],[NOTE.C3,16],[NOTE.REST,16],[NOTE.F3,16],[NOTE.REST,16],[NOTE.C3,16],[NOTE.REST,16],
+            [NOTE.G3,16],[NOTE.REST,16],[NOTE.D3,16],[NOTE.REST,16],[NOTE.G3,16],[NOTE.REST,16],[NOTE.D3,16],[NOTE.REST,16]
+        ];
+
+        function initAudio() {
+            if (audioCtx) return;
+            try {
+                audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+            } catch (e) {
+                console.warn("Web Audio API 不可用", e);
+                musicEnabled = false;
+            }
+        }
+
+        function playNote(freq, durationMs, type, gain) {
+            if (!audioCtx || !musicEnabled || freq === NOTE.REST) return;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = type || "square";
+            osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+            g.gain.setValueAtTime(0, audioCtx.currentTime);
+            g.gain.linearRampToValueAtTime((gain || 0.18) * MASTER_GAIN, audioCtx.currentTime + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + durationMs / 1000);
+            osc.connect(g).connect(audioCtx.destination);
+            osc.start();
+            osc.stop(audioCtx.currentTime + durationMs / 1000 + 0.05);
+        }
+
+        // ----- 音效 (8-bit 风格短音) -----
+        // 音效在 background music 关闭时仍然播放（不受 musicEnabled 控制）
+        function sfxJump() {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = "square";
+            // 跳跃：快速上升的滑音 (从 ~520Hz 升到 ~1200Hz)
+            osc.frequency.setValueAtTime(520, t);
+            osc.frequency.exponentialRampToValueAtTime(1200, t + 0.12);
+            g.gain.setValueAtTime(0, t);
+            g.gain.linearRampToValueAtTime(0.22 * MASTER_GAIN, t + 0.01);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+            osc.connect(g).connect(audioCtx.destination);
+            osc.start(t);
+            osc.stop(t + 0.2);
+        }
+
+        function sfxDeath() {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            // 死亡：两段下滑的"咚咚"声
+            [0, 0.18].forEach((delay, i) => {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = "square";
+                osc.frequency.setValueAtTime(i === 0 ? 440 : 330, t + delay);
+                osc.frequency.exponentialRampToValueAtTime(i === 0 ? 220 : 110, t + delay + 0.18);
+                g.gain.setValueAtTime(0, t + delay);
+                g.gain.linearRampToValueAtTime(0.28 * MASTER_GAIN, t + delay + 0.01);
+                g.gain.exponentialRampToValueAtTime(0.001, t + delay + 0.2);
+                osc.connect(g).connect(audioCtx.destination);
+                osc.start(t + delay);
+                osc.stop(t + delay + 0.22);
+            });
+        }
+
+        function sfxCoin() {  // 收集小奖励的清脆"叮"声（备用）
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            [988, 1319].forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = "square";
+                osc.frequency.setValueAtTime(freq, t + i * 0.06);
+                g.gain.setValueAtTime(0, t + i * 0.06);
+                g.gain.linearRampToValueAtTime(0.18 * MASTER_GAIN, t + i * 0.06 + 0.005);
+                g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.06 + 0.08);
+                osc.connect(g).connect(audioCtx.destination);
+                osc.start(t + i * 0.06);
+                osc.stop(t + i * 0.06 + 0.1);
+            });
+        }
+
+        function sfxWin() {
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            // 通关：欢快的上行音阶 (C5→E5→G5→C6)，每音约 80ms
+            const notes = [523.25, 659.25, 783.99, 1046.5];
+            notes.forEach((freq, i) => {
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.type = "square";
+                osc.frequency.setValueAtTime(freq, t + i * 0.1);
+                g.gain.setValueAtTime(0, t + i * 0.1);
+                g.gain.linearRampToValueAtTime(0.25 * MASTER_GAIN, t + i * 0.1 + 0.01);
+                g.gain.exponentialRampToValueAtTime(0.001, t + i * 0.1 + 0.18);
+                osc.connect(g).connect(audioCtx.destination);
+                osc.start(t + i * 0.1);
+                osc.stop(t + i * 0.1 + 0.2);
+            });
+            // 末尾再来一个长持续的高音庆祝
+            const lastOsc = audioCtx.createOscillator();
+            const lastG = audioCtx.createGain();
+            lastOsc.type = "square";
+            lastOsc.frequency.setValueAtTime(1046.5, t + 0.4);
+            lastG.gain.setValueAtTime(0, t + 0.4);
+            lastG.gain.linearRampToValueAtTime(0.25 * MASTER_GAIN, t + 0.42);
+            lastG.gain.exponentialRampToValueAtTime(0.001, t + 0.95);
+            lastOsc.connect(lastG).connect(audioCtx.destination);
+            lastOsc.start(t + 0.4);
+            lastOsc.stop(t + 1.0);
+        }
+
+        function sfxLand() {  // 落地轻响（备用）
+            if (!audioCtx) return;
+            const t = audioCtx.currentTime;
+            const osc = audioCtx.createOscillator();
+            const g = audioCtx.createGain();
+            osc.type = "square";
+            osc.frequency.setValueAtTime(220, t);
+            osc.frequency.exponentialRampToValueAtTime(110, t + 0.06);
+            g.gain.setValueAtTime(0.15 * MASTER_GAIN, t);
+            g.gain.exponentialRampToValueAtTime(0.001, t + 0.07);
+            osc.connect(g).connect(audioCtx.destination);
+            osc.start(t);
+            osc.stop(t + 0.08);
+        }
+
+        function musicStepRunner() {
+            if (!musicEnabled || !audioCtx) return;
+            // 主旋律
+            const m = MELODY[musicStep % MELODY.length];
+            playNote(m[0], (m[1] / 16) * 480, "square", 0.22);
+            // 低音
+            const b = BASS[musicStep % BASS.length];
+            playNote(b[0], (b[1] / 16) * 480, "triangle", 0.35);
+            musicStep++;
+        }
+
+        function startMusic() {
+            initAudio();
+            if (!audioCtx) return;
+            if (audioCtx.state === "suspended") audioCtx.resume();
+            if (musicTimer) return;
+            // 每 30ms 推进一拍 (16分音符 = 480ms / 16 ≈ 30ms)
+            musicTimer = setInterval(musicStepRunner, 120);
+        }
+
+        function stopMusic() {
+            if (musicTimer) { clearInterval(musicTimer); musicTimer = null; }
+        }
+
+        function toggleMusic() {
+            musicEnabled = !musicEnabled;
+            const btn = document.getElementById("music-btn");
+            if (btn) btn.textContent = musicEnabled ? "🔊 音乐" : "🔇 静音";
+            if (musicEnabled) startMusic(); else stopMusic();
+        }
+
+        // ----- 输入 -----
+        document.addEventListener("keydown", e => {
+            keys[e.code] = true;
+            if (["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
+        });
+        document.addEventListener("keyup", e => {
+            keys[e.code] = false;
+        });
+
+        // ----- 关卡数据 (5关) -----
+        const levels = [
+            { // 1
+                platforms: [{x:0,y:460,w:800,h:40},{x:200,y:365,w:140,h:20},{x:430,y:285,w:140,h:20},{x:630,y:205,w:120,h:20}],
+                spikes: [{x:340,y:442,w:72,h:18}],
+                movingPlatforms: [],
+                door: {x:690,y:155,w:44,h:55},
+                start: {x:80,y:390}
+            },
+            { // 2
+                platforms: [{x:0,y:458,w:225,h:45},{x:265,y:464,w:175,h:38},{x:515,y:454,w:295,h:48},{x:140,y:366,w:90,h:16},{x:362,y:303,w:116,h:16},{x:572,y:212,w:108,h:16}],
+                spikes: [{x:216,y:437,w:64,h:24},{x:424,y:433,w:66,h:26},{x:578,y:429,w:68,h:28}],
+                movingPlatforms: [],
+                door: {x:698,y:144,w:44,h:58},
+                start: {x:35,y:393}
+            },
+            { // 3 移动平台 (修复版)
+                platforms: [{x:0,y:453,w:168,h:51},{x:662,y:450,w:146,h:53},{x:312,y:136,w:152,h:26}],
+                spikes: [{x:180,y:436,w:506,h:24}],
+                movingPlatforms: [
+                    {x:153,y:372,w:90,h:20,dx:2.4,minX:133,maxX:363},
+                    {x:406,y:286,w:92,h:20,dy:1.8,minY:188,maxY:358}
+                ],
+                door: {x:560,y:110,w:46,h:58},
+                start: {x:42,y:389}
+            },
+            { // 4 多段地面 + 长刺
+                platforms: [
+                    {x:0,y:451,w:126,h:52},{x:148,y:444,w:112,h:32},{x:274,y:439,w:117,h:35},
+                    {x:404,y:436,w:113,h:38},{x:531,y:433,w:119,h:41},{x:663,y:430,w:143,h:52},
+                    {x:186,y:350,w:124,h:26},{x:404,y:260,w:122,h:26}
+                ],
+                spikes: [{x:150,y:424,w:560,h:28}],
+                movingPlatforms: [],
+                door: {x:560,y:240,w:46,h:61},
+                start: {x:28,y:384}
+            },
+            { // 5 混合挑战
+                platforms: [
+                    {x:0,y:454,w:107,h:48},{x:115,y:374,w:87,h:26},{x:244,y:292,w:91,h:26},
+                    {x:310,y:369,w:75,h:26},{x:544,y:268,w:97,h:26},{x:674,y:184,w:134,h:28},
+                    {x:298,y:129,w:121,h:28}
+                ],
+                spikes: [{x:130,y:427,w:106,h:28},{x:320,y:418,w:85,h:30},{x:510,y:414,w:97,h:32}],
+                movingPlatforms: [
+                    {x:442,y:332,w:81,h:22,dy:2.0,minY:235,maxY:441}
+                ],
+                door: {x:58,y:66,w:46,h:95},
+                start: {x:20,y:386}
+            }
+        ];
+
+        // ----- 加载关卡 -----
+        function loadLevel(n) {
+            if (n >= levels.length) {
+                showWinScreen();
+                return;
+            }
+            currentLevel = n;
+            const L = levels[n];
+            player = {
+                x: L.start.x, y: L.start.y,
+                w: 30, h: 30,
+                vx: 0, vy: 0,
+                onGround: false,
+                facing: 1,
+                alive: true,
+                onMoving: null
+            };
+            platforms = L.platforms.map((plat, i) => ({
+                ...plat,
+                disappeared: false,
+                disappearTimer: 0,
+                trigger: (plat.y >= 435 && i > 0)
+            }));
+            spikes = L.spikes.map(s => ({...s}));
+            movingPlatforms = L.movingPlatforms.map(mp => ({
+                ...mp,
+                currentX: mp.x,
+                currentY: mp.y,
+                dir: 1
+            }));
+            door = {...L.door};
+            gameWon = false;
+            document.getElementById("level-info").textContent =
+                "第 " + (n+1) + " 关 / 共 " + levels.length + " 关";
+        }
+
+        function showWinScreen() {
+            gameWon = true;
+            timerRunning = false;
+            totalTime = (Date.now() - startTime) / 1000;
+            sfxWin(); // 通关音效
+
+            // 时间比较
+            let bestText = "最快成绩：";
+            let compareText = "";
+            if (bestTime === Infinity) {
+                bestTime = totalTime;
+                localStorage.setItem("levelDevilBestTime", bestTime.toFixed(2));
+                bestText += bestTime.toFixed(2) + " 秒 🎉 新纪录！";
+                compareText = "这是你的第一次通关！";
+            } else if (totalTime < bestTime) {
+                const diff = (bestTime - totalTime).toFixed(2);
+                bestTime = totalTime;
+                localStorage.setItem("levelDevilBestTime", bestTime.toFixed(2));
+                bestText += bestTime.toFixed(2) + " 秒 🎉 新纪录！";
+                compareText = "比原纪录快 " + diff + " 秒";
+            } else if (totalTime > bestTime) {
+                const diff = (totalTime - bestTime).toFixed(2);
+                bestText += bestTime.toFixed(2) + " 秒";
+                compareText = "比最快成绩慢 " + diff + " 秒";
+            } else {
+                bestText += bestTime.toFixed(2) + " 秒";
+                compareText = "平最快纪录！";
+            }
+
+            // 死亡次数比较
+            let deathsText = "死亡次数：" + deathCount + " 次";
+            let bestDeathsText = "最少死亡：";
+            let deathsCompareText = "";
+            if (bestDeaths === Infinity) {
+                bestDeaths = deathCount;
+                localStorage.setItem("levelDevilBestDeaths", bestDeaths);
+                bestDeathsText += bestDeaths + " 次 🎉 新纪录！";
+                deathsCompareText = "第一次通关，少死为赢！";
+            } else if (deathCount < bestDeaths) {
+                const diff = bestDeaths - deathCount;
+                bestDeaths = deathCount;
+                localStorage.setItem("levelDevilBestDeaths", bestDeaths);
+                bestDeathsText += bestDeaths + " 次 🎉 新纪录！";
+                deathsCompareText = "比原纪录少死 " + diff + " 次";
+            } else if (deathCount > bestDeaths) {
+                const diff = deathCount - bestDeaths;
+                bestDeathsText += bestDeaths + " 次";
+                deathsCompareText = "比最少死亡多 " + diff + " 次";
+            } else {
+                bestDeathsText += bestDeaths + " 次";
+                deathsCompareText = "平最少死亡纪录！";
+            }
+
+            document.getElementById("win-text").textContent = "🎉 全部通关！ 你太棒啦！";
+            document.getElementById("win-time").textContent = "通关时间：" + totalTime.toFixed(2) + " 秒";
+            document.getElementById("win-best").textContent = bestText;
+            document.getElementById("win-compare").textContent = compareText;
+            document.getElementById("win-deaths").textContent = deathsText;
+            document.getElementById("win-best-deaths").textContent = bestDeathsText;
+            document.getElementById("win-deaths-compare").textContent = deathsCompareText;
+            document.getElementById("win-screen").classList.add("show");
+        }
+
+        function updateTimerDisplay() {
+            const bestLabel = bestTime === Infinity ? "--" : bestTime.toFixed(2);
+            document.getElementById("timer").textContent = "时间：" + totalTime.toFixed(2) + " 秒 | 最快：" + bestLabel + " 秒 | 死亡：" + deathCount + " 次";
+        }
+
+        let respawnTimer = 0;
+        const RESPAWN_DELAY_FRAMES = 60; // 死亡后 1 秒暗影
+        let countdownTimer = 0;
+        const COUNTDOWN_FRAMES = 180; // 屏幕中心 3 秒倒计时
+
+        function respawn() {
+            if (!player.alive) return; // 防止重复触发
+            // 记录进入死亡的时刻，之后重生时把这段空窗从计时中扣除
+            pauseStartedAt = Date.now();
+            sfxDeath(); // 死亡音效
+            player.alive = false;
+            respawnTimer = RESPAWN_DELAY_FRAMES;
+            countdownTimer = 0; // 还没进入倒计时阶段
+        }
+
+        function performRespawn() {
+            // 把死亡期间的空窗补偿回 startTime，使计时器不包含这段时间
+            if (pauseStartedAt > 0) {
+                startTime += Date.now() - pauseStartedAt;
+                pauseStartedAt = 0;
+            }
+            const L = levels[currentLevel];
+            player.x = L.start.x;
+            player.y = L.start.y;
+            player.vx = 0;
+            player.vy = 0;
+            player.alive = true;
+            player.onGround = false;
+            player.onMoving = null;
+            deathCount++;
+            updateTimerDisplay();
+            // 死亡不重置总计时
+            platforms.forEach(pl => {
+                if (pl.disappeared) {
+                    pl.disappeared = false;
+                    pl.disappearTimer = 0;
+                }
+            });
+        }
+
+        function collides(a, b) {
+            return a.x < b.x + b.w &&
+                   a.x + a.w > b.x &&
+                   a.y < b.y + b.h &&
+                   a.y + a.h > b.y;
+        }
+
+        // ----- 更新逻辑 (核心修复) -----
+        function update() {
+            if (gameWon) return;
+
+            const left  = keys["ArrowLeft"] || keys["KeyA"];
+            const right = keys["ArrowRight"] || keys["KeyD"];
+            const jump  = keys["Space"] || keys["ArrowUp"] || keys["KeyW"];
+
+            if (left) {
+                player.vx = -4.2;
+                player.facing = -1;
+            } else if (right) {
+                player.vx = 4.2;
+                player.facing = 1;
+            } else {
+                player.vx *= 0.68;
+            }
+
+            // 记录移动平台旧位置并更新平台
+            const mpOldX = movingPlatforms.map(mp => mp.currentX);
+            const mpOldY = movingPlatforms.map(mp => mp.currentY);
+
+            for (const mp of movingPlatforms) {
+                if (mp.dx) {
+                    mp.currentX += mp.dx * mp.dir;
+                    mp.x = mp.currentX; // 同步碰撞用坐标
+                    if (mp.currentX <= mp.minX || mp.currentX >= mp.maxX) mp.dir *= -1;
+                }
+                if (mp.dy) {
+                    mp.currentY += mp.dy * mp.dir;
+                    mp.y = mp.currentY; // 同步碰撞用坐标
+                    if (mp.currentY <= mp.minY || mp.currentY >= mp.maxY) mp.dir *= -1;
+                }
+            }
+
+            // 先让玩家跟随当前站立的移动平台移动，再施加重力和输入
+            let carryDx = 0, carryDy = 0;
+            if (player.onMoving !== null && player.onMoving < movingPlatforms.length) {
+                const mp = movingPlatforms[player.onMoving];
+                carryDx = mp.currentX - mpOldX[player.onMoving];
+                carryDy = mp.currentY - mpOldY[player.onMoving];
+                player.x += carryDx;
+                player.y += carryDy;
+            }
+
+            if (jump && player.onGround) {
+                player.vy = -11.8;
+                player.onGround = false;
+                player.onMoving = null; // 跳跃时立即脱离平台
+                sfxJump(); // 跳跃音效
+            }
+
+            player.vy += GRAVITY;
+            if (player.vy > 12) player.vy = 12;
+
+            // ---- X轴碰撞：只与静态平台做左右推开，避免移动平台把玩家顶下去 ----
+            player.x += player.vx;
+            if (player.x < 0) player.x = 0;
+            if (player.x + player.w > W) player.x = W - player.w;
+
+            for (const pl of platforms) {
+                if (pl.disappeared) continue;
+                if (collides(player, pl)) {
+                    if (player.vx > 0) {
+                        player.x = pl.x - player.w;
+                    } else if (player.vx < 0) {
+                        player.x = pl.x + pl.w;
+                    }
+                    player.vx = 0;
+                }
+            }
+
+            // ---- Y轴碰撞 ----
+            player.y += player.vy;
+            player.onGround = false;
+            player.onMoving = null;
+
+            const allPlats = [...platforms, ...movingPlatforms];
+            for (const pl of allPlats) {
+                if (pl.disappeared) continue;
+                if (collides(player, pl)) {
+                    if (player.vy > 0) {
+                        player.y = pl.y - player.h;
+                        player.vy = 0;
+                        player.onGround = true;
+                        const mpIdx = movingPlatforms.indexOf(pl);
+                        if (mpIdx !== -1) player.onMoving = mpIdx;
+
+                        if (pl.trigger && !pl.disappeared) {
+                            pl.disappearTimer++;
+                            if (pl.disappearTimer > 40) {
+                                pl.disappeared = true;
+                            }
+                        }
+                    } else if (player.vy < 0) {
+                        player.y = pl.y + pl.h;
+                        player.vy = 0;
+                    }
+                }
+            }
+
+            // ---- 更新计时器（只统计玩家活着的真实游玩时间） ----
+            if (timerRunning && player.alive) {
+                totalTime = (Date.now() - startTime) / 1000;
+                updateTimerDisplay();
+            }
+
+            // ---- 更新幻影拖尾 ----
+            updatePhantoms();
+
+            // ---- 调试日志（第三关，仅记录状态变化） ----
+            debugFrame++;
+            if (currentLevel === 2 && player.onMoving !== prevOnMoving) {
+                const mp0 = movingPlatforms[0];
+                const mp1 = movingPlatforms[1];
+                console.log(JSON.stringify({
+                    f: debugFrame,
+                    event: player.onMoving === null ? "left platform" : "landed platform " + player.onMoving,
+                    px: +player.x.toFixed(2),
+                    py: +player.y.toFixed(2),
+                    vx: +player.vx.toFixed(2),
+                    vy: +player.vy.toFixed(2),
+                    og: player.onGround,
+                    mp0: mp0 ? {x:+mp0.currentX.toFixed(1), y:+mp0.currentY.toFixed(1)} : null,
+                    mp1: mp1 ? {x:+mp1.currentX.toFixed(1), y:+mp1.currentY.toFixed(1)} : null
+                }));
+                prevOnMoving = player.onMoving;
+            }
+
+            // ---- 死亡条件 ----
+            if (player.alive && (player.y > H + 40 || spikes.some(s => collides(player, s)))) {
+                if (currentLevel === 2) console.log("L3 DEATH");
+                respawn();
+                return;
+            }
+
+            // ---- 复活流程：死亡 → 1秒暗影 → 3秒中心倒计时（锁定输入）→ 真正重生 ----
+            if (!player.alive) {
+                if (respawnTimer > 0) {
+                    respawnTimer--;
+                    return;
+                }
+                // 启动中心倒计时
+                if (countdownTimer === 0) {
+                    countdownTimer = COUNTDOWN_FRAMES;
+                }
+                countdownTimer--;
+                if (countdownTimer > 0) {
+                    return; // 倒计时期间锁定所有操作
+                }
+                // 倒计时结束，执行真正重生
+                performRespawn();
+                countdownTimer = 0;
+            }
+
+            // ---- 到达门 ----
+            if (collides(player, door)) {
+                loadLevel(currentLevel + 1);
+                return;
+            }
+        }
+
+        // ----- 幻影拖尾 -----
+        function updatePhantoms() {
+            if (!PHANTOM.enabled || !player.alive) {
+                phantomTrail.length = 0;
+                return;
+            }
+            // 衰减所有幻影的透明度
+            for (const p of phantomTrail) {
+                p.alpha -= PHANTOM.fadeStep;
+            }
+            // 移除已经淡出或超出上限的幻影
+            phantomTrail = phantomTrail.filter(p => p.alpha > PHANTOM.minAlpha);
+            while (phantomTrail.length > PHANTOM.maxCount) phantomTrail.shift();
+
+            phantomFrame++;
+            // 当横向移动较快或处于跳跃/下落时，间隔生成幻影
+            const moving = Math.abs(player.vx) > PHANTOM.moveThreshold;
+            const inAir = Math.abs(player.vy) > PHANTOM.jumpThreshold;
+            if ((moving || inAir) && phantomFrame >= PHANTOM.interval) {
+                phantomFrame = 0;
+                phantomTrail.push({
+                    x: player.x,
+                    y: player.y,
+                    w: player.w,
+                    h: player.h,
+                    facing: player.facing,
+                    alpha: PHANTOM.startAlpha
+                });
+            }
+        }
+
+        function drawPhantoms() {
+            if (!PHANTOM.enabled || phantomTrail.length === 0) return;
+            for (const p of phantomTrail) {
+                const a = Math.max(p.alpha, 0);
+                ctx.fillStyle = "rgba(230,57,70," + a.toFixed(3) + ")";
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                // 淡淡的角
+                ctx.fillStyle = "rgba(255,217,61," + (a * 0.6).toFixed(3) + ")";
+                ctx.beginPath();
+                ctx.moveTo(p.x + 5, p.y);
+                ctx.lineTo(p.x + 10, p.y - 10);
+                ctx.lineTo(p.x + 15, p.y);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(p.x + p.w - 15, p.y);
+                ctx.lineTo(p.x + p.w - 10, p.y - 10);
+                ctx.lineTo(p.x + p.w - 5, p.y);
+                ctx.fill();
+            }
+        }
+
+        // ----- 绘制 (无改动，保持原有风格) -----
+        function draw() {
+            const grad = ctx.createLinearGradient(0, 0, 0, H);
+            grad.addColorStop(0, "#16213e");
+            grad.addColorStop(1, "#0f3460");
+            ctx.fillStyle = grad;
+            ctx.fillRect(0, 0, W, H);
+
+            ctx.fillStyle = "rgba(255,255,240,0.06)";
+            for (let i=0; i<50; i++) {
+                if (i%2===0) continue;
+                ctx.beginPath();
+                ctx.arc( (i*23+7)%W, (i*13+11)%H, 1.5, 0, Math.PI*2);
+                ctx.fill();
+            }
+
+            for (const p of platforms) {
+                if (p.disappeared) continue;
+                ctx.globalAlpha = p.disappearTimer > 0 ? 1 - p.disappearTimer/40 : 1;
+                ctx.fillStyle = "#3d6a7a";
+                ctx.fillRect(p.x, p.y, p.w, p.h);
+                ctx.fillStyle = "#7ec8e3";
+                ctx.fillRect(p.x, p.y, p.w, 5);
+                ctx.globalAlpha = 1;
+            }
+
+            for (const mp of movingPlatforms) {
+                ctx.fillStyle = "#f5b042";
+                ctx.shadowColor = "#ffd966";
+                ctx.shadowBlur = 12;
+                ctx.fillRect(mp.currentX, mp.currentY, mp.w, mp.h);
+                ctx.fillStyle = "#ffea9e";
+                ctx.fillRect(mp.currentX, mp.currentY, mp.w, 5);
+                ctx.shadowBlur = 0;
+            }
+
+            for (const s of spikes) {
+                ctx.fillStyle = "#ff4757";
+                const count = Math.floor(s.w / 14);
+                for (let i = 0; i < count; i++) {
+                    const tx = s.x + i * 14;
+                    ctx.beginPath();
+                    ctx.moveTo(tx, s.y + s.h);
+                    ctx.lineTo(tx + 7, s.y);
+                    ctx.lineTo(tx + 14, s.y + s.h);
+                    ctx.closePath();
+                    ctx.fill();
+                }
+                ctx.fillStyle = "#c0392b";
+                ctx.fillRect(s.x, s.y + s.h - 3, s.w, 3);
+            }
+
+            ctx.fillStyle = "#6d4c41";
+            ctx.fillRect(door.x, door.y, door.w, door.h);
+            ctx.fillStyle = "#f5cd7a";
+            ctx.fillRect(door.x + 5, door.y + 6, door.w - 10, door.h - 12);
+            ctx.fillStyle = "#f39c12";
+            ctx.beginPath();
+            ctx.arc(door.x + door.w - 12, door.y + door.h/2, 5, 0, Math.PI*2);
+            ctx.fill();
+
+            drawPhantoms();
+
+            if (player.alive || respawnTimer > 0) {
+                const px = player.x, py = player.y;
+                // 死亡倒计时中玩家变暗
+                if (!player.alive) {
+                    ctx.globalAlpha = 0.35;
+                }
+                ctx.fillStyle = "#e63946";
+                ctx.shadowColor = "#ff6b6b";
+                ctx.shadowBlur = 12;
+                ctx.fillRect(px, py, player.w, player.h);
+                ctx.shadowBlur = 0;
+                ctx.fillStyle = "#ffffff";
+                const eyeOff = player.facing > 0 ? 18 : 4;
+                ctx.beginPath();
+                ctx.arc(px + eyeOff, py + 10, 5, 0, Math.PI*2);
+                ctx.arc(px + eyeOff + (player.facing>0? 8 : -8), py + 10, 5, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#1a1a2e";
+                ctx.beginPath();
+                ctx.arc(px + eyeOff + player.facing*2, py + 10, 2.2, 0, Math.PI*2);
+                ctx.arc(px + eyeOff + (player.facing>0? 8 : -8) + player.facing*2, py + 10, 2.2, 0, Math.PI*2);
+                ctx.fill();
+                ctx.fillStyle = "#ffd93d";
+                ctx.beginPath();
+                ctx.moveTo(px + 5, py);
+                ctx.lineTo(px + 10, py - 10);
+                ctx.lineTo(px + 15, py);
+                ctx.fill();
+                ctx.beginPath();
+                ctx.moveTo(px + player.w - 15, py);
+                ctx.lineTo(px + player.w - 10, py - 10);
+                ctx.lineTo(px + player.w - 5, py);
+                ctx.fill();
+                ctx.globalAlpha = 1;
+            }
+
+            // ---- 屏幕中心倒计时遮罩 ----
+            if (countdownTimer > 0) {
+                const sec = Math.ceil(countdownTimer / 60);
+                // 半透明黑色遮罩
+                ctx.fillStyle = "rgba(0,0,0,0.55)";
+                ctx.fillRect(0, 0, W, H);
+
+                // 圆形背景
+                const cx = W / 2, cy = H / 2;
+                const r = 90;
+                ctx.fillStyle = "rgba(26,26,46,0.95)";
+                ctx.beginPath();
+                ctx.arc(cx, cy, r, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.strokeStyle = "#ffd93d";
+                ctx.lineWidth = 5;
+                ctx.stroke();
+
+                // 提示文字
+                ctx.fillStyle = "#ffd93d";
+                ctx.font = "bold 22px Segoe UI, sans-serif";
+                ctx.textAlign = "center";
+                ctx.textBaseline = "middle";
+                ctx.fillText("即将重生", cx, cy - 50);
+
+                // 大号数字
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "bold 80px Segoe UI, sans-serif";
+                ctx.fillText(sec.toString(), cx, cy + 5);
+
+                // 副标题
+                ctx.fillStyle = "#9a9ab0";
+                ctx.font = "16px Segoe UI, sans-serif";
+                ctx.fillText("请稍候...", cx, cy + 60);
+            }
+        }
+
+        function loop() {
+            update();
+            draw();
+            requestAnimationFrame(loop);
+        }
+
+        document.getElementById("music-btn").addEventListener("click", toggleMusic);
+
+        // 用户首次按键时启动音乐（浏览器自动播放策略要求）
+        function tryStartMusic() {
+            startMusic();
+            window.removeEventListener("keydown", tryStartMusic);
+            document.removeEventListener("click", tryStartMusic);
+        }
+        window.addEventListener("keydown", tryStartMusic, { once: true });
+        document.addEventListener("click", tryStartMusic, { once: true });
+
+        document.getElementById("restart-btn").addEventListener("click", function() {
+            document.getElementById("win-screen").classList.remove("show");
+            deathCount = 0;
+            countdownTimer = 0;
+            startTime = Date.now();
+            totalTime = 0;
+            timerRunning = true;
+            loadLevel(0);
+        });
+
+        loadLevel(0);
+        loop();
+    })();
+</script>
+</body>
+</html>

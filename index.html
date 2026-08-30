@@ -583,8 +583,10 @@
         }
 
         // ----- 更新逻辑 (核心修复) -----
-        function update() {
+        function update(dt) {
             if (gameWon) return;
+            // 速度/重力按"每像素/秒"和"每像素/秒²"换算
+            const dtScale = dt * 60; // 60fps 下为 1.0
 
             const left  = keys["ArrowLeft"] || keys["KeyA"];
             const right = keys["ArrowRight"] || keys["KeyD"];
@@ -606,12 +608,12 @@
 
             for (const mp of movingPlatforms) {
                 if (mp.dx) {
-                    mp.currentX += mp.dx * mp.dir;
+                    mp.currentX += mp.dx * mp.dir * dtScale;
                     mp.x = mp.currentX; // 同步碰撞用坐标
                     if (mp.currentX <= mp.minX || mp.currentX >= mp.maxX) mp.dir *= -1;
                 }
                 if (mp.dy) {
-                    mp.currentY += mp.dy * mp.dir;
+                    mp.currentY += mp.dy * mp.dir * dtScale;
                     mp.y = mp.currentY; // 同步碰撞用坐标
                     if (mp.currentY <= mp.minY || mp.currentY >= mp.maxY) mp.dir *= -1;
                 }
@@ -634,11 +636,12 @@
                 sfxJump(); // 跳跃音效
             }
 
-            player.vy += GRAVITY;
+            // 重力按"每像素/秒²"换算
+            player.vy += GRAVITY * dtScale;
             if (player.vy > 12) player.vy = 12;
 
             // ---- X轴碰撞：只与静态平台做左右推开，避免移动平台把玩家顶下去 ----
-            player.x += player.vx;
+            player.x += player.vx * dtScale;
             if (player.x < 0) player.x = 0;
             if (player.x + player.w > W) player.x = W - player.w;
 
@@ -655,7 +658,7 @@
             }
 
             // ---- Y轴碰撞 ----
-            player.y += player.vy;
+            player.y += player.vy * dtScale;
             player.onGround = false;
             player.onMoving = null;
 
@@ -932,8 +935,24 @@
             }
         }
 
-        function loop() {
-            update();
+        // 帧率无关的固定时间步长
+        const FIXED_DT = 1 / 60; // 60fps 基准
+        let lastTime = performance.now();
+        let accumulator = 0;
+        const MAX_DT = 0.1; // 防止标签页切回后大跳
+
+        function loop(currentTime) {
+            if (currentTime === undefined) currentTime = performance.now();
+            let frameDt = (currentTime - lastTime) / 1000;
+            lastTime = currentTime;
+            if (frameDt > MAX_DT) frameDt = MAX_DT;
+            accumulator += frameDt;
+
+            // 固定步长物理更新
+            while (accumulator >= FIXED_DT) {
+                update(FIXED_DT);
+                accumulator -= FIXED_DT;
+            }
             draw();
             requestAnimationFrame(loop);
         }

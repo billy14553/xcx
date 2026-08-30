@@ -36,6 +36,7 @@
  let currentLevel = 0, deathCount = 0, gameWon = false;
  let keys = {}, player, platforms, spikes, movingPlatforms, door;
 let startTime = Date.now(), totalTime = 0, timerRunning = true, pauseStartedAt = 0;
+const FIXED_DT = 1/60; let lastTime = performance.now(); let accumulator = 0; const MAX_DT = 0.1;
 let bestTime = parseFloat(localStorage.getItem("levelDevilBestTime")) || Infinity;
 let bestDeaths = parseInt(localStorage.getItem("levelDevilBestDeaths")) || Infinity;
 const PHANTOM = { enabled: true, interval: 1, maxCount: 28, fadeStep: 0.05, minAlpha: 0.05, startAlpha: 0.85, moveThreshold: 0.2, jumpThreshold: 0.3 };
@@ -146,8 +147,9 @@ function respawn() { if (!player.alive) return; pauseStartedAt = Date.now(); sfx
 function performRespawn() { if (pauseStartedAt > 0) { startTime += Date.now() - pauseStartedAt; pauseStartedAt = 0; } const L = levels[currentLevel]; player.x = L.start.x; player.y = L.start.y; player.vx = 0; player.vy = 0; player.alive = true; player.onGround = false; player.onMoving = null; deathCount++; updateTimerDisplay(); platforms.forEach(pl => { if(pl.disappeared) { pl.disappeared = false; pl.disappearTimer = 0; }}); }
  function collides(a, b) { return a.x < b.x+b.w && a.x+a.w > b.x && a.y < b.y+b.h && a.y+a.h > b.y; }
  
-function update() {
+function update(dt) {
   if (gameWon) return;
+  const dtScale = dt * 60;
   if (timerRunning && player.alive) { totalTime = (Date.now() - startTime) / 1000; updateTimerDisplay(); }
 updatePhantoms();
   const ml = keys["ArrowLeft"]||keys["KeyA"], mr = keys["ArrowRight"]||keys["KeyD"], jk = keys["Space"]||keys["ArrowUp"]||keys["KeyW"];
@@ -157,8 +159,8 @@ updatePhantoms();
   const mpOldY = movingPlatforms.map(mp => mp.currentY);
 
   for (const mp of movingPlatforms) {
-    if (mp.dx) { mp.currentX += mp.dx * mp.dir; mp.x = mp.currentX; if (mp.currentX <= mp.minX || mp.currentX >= mp.maxX) mp.dir *= -1; }
-    if (mp.dy) { mp.currentY += mp.dy * mp.dir; mp.y = mp.currentY; if (mp.currentY <= mp.minY || mp.currentY >= mp.maxY) mp.dir *= -1; }
+    if (mp.dx) { mp.currentX += mp.dx * mp.dir * dtScale; mp.x = mp.currentX; if (mp.currentX <= mp.minX || mp.currentX >= mp.maxX) mp.dir *= -1; }
+    if (mp.dy) { mp.currentY += mp.dy * mp.dir * dtScale; mp.y = mp.currentY; if (mp.currentY <= mp.minY || mp.currentY >= mp.maxY) mp.dir *= -1; }
   }
 
   // 先让玩家跟随当前站立的移动平台移动
@@ -169,9 +171,9 @@ updatePhantoms();
   }
 
   if (jk && player.onGround) { player.vy = -12; player.onGround = false; player.onMoving = null; sfxJump(); }
-  player.vy += GRAVITY; if (player.vy > 12) player.vy = 12;
+  player.vy += GRAVITY * dtScale; if (player.vy > 12) player.vy = 12;
 
-  player.x += player.vx;
+  player.x += player.vx * dtScale;
   if (player.x < 0) player.x = 0;
   if (player.x + player.w > W) player.x = W - player.w;
 
@@ -185,7 +187,7 @@ updatePhantoms();
     }
   }
 
-  player.y += player.vy;
+  player.y += player.vy * dtScale;
   player.onGround = false;
   player.onMoving = null;
   const allP = [...platforms, ...movingPlatforms];
@@ -265,7 +267,7 @@ updatePhantoms();
   }
  }
  
- function loop() { update(); draw(); requestAnimationFrame(loop); }
+ function loop(currentTime) { if (currentTime === undefined) currentTime = performance.now(); let frameDt = (currentTime - lastTime) / 1000; lastTime = currentTime; if (frameDt > MAX_DT) frameDt = MAX_DT; accumulator += frameDt; while (accumulator >= FIXED_DT) { update(FIXED_DT); accumulator -= FIXED_DT; } draw(); requestAnimationFrame(loop); }
  document.getElementById("music-btn").addEventListener("click", toggleMusic);
 function tryStartMusic() { startMusic(); window.removeEventListener("keydown", tryStartMusic); document.removeEventListener("click", tryStartMusic); }
 window.addEventListener("keydown", tryStartMusic, { once: true });

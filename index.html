@@ -257,9 +257,9 @@
     <div id="win-time" style="font-size:24px;color:#fff;margin-bottom:8px;">通关时间：0.00 秒</div>
     <div id="win-best" style="font-size:20px;color:#ffd93d;margin-bottom:8px;">最快成绩：--</div>
     <div id="win-compare" style="font-size:18px;color:#7ec8e3;margin-bottom:12px;"></div>
-    <div id="win-deaths" style="font-size:20px;color:#ff6b6b;margin-bottom:8px;">死亡次数：0 次</div>
-    <div id="win-best-deaths" style="font-size:18px;color:#ffd93d;margin-bottom:8px;">最少死亡：--</div>
-    <div id="win-deaths-compare" style="font-size:16px;color:#7ec8e3;margin-bottom:16px;"></div>
+    <div id="win-deaths" style="font-size:20px;color:#ff6b6b;margin-bottom:8px;display:none;">死亡次数：0 次</div>
+    <div id="win-best-deaths" style="font-size:18px;color:#ffd93d;margin-bottom:8px;display:none;">最少死亡：--</div>
+    <div id="win-deaths-compare" style="font-size:16px;color:#7ec8e3;margin-bottom:16px;display:none;"></div>
     <button id="restart-btn">🔄 重新冒险</button>
 </div>
 
@@ -269,7 +269,7 @@
     <div id="leaderboard-status">加载中...</div>
     <table id="leaderboard-table">
         <thead>
-            <tr><th>排名</th><th>姓名</th><th>时间</th><th>死亡</th><th>日期</th></tr>
+            <tr><th>排名</th><th>姓名</th><th>时间</th><th>日期</th></tr>
         </thead>
         <tbody id="leaderboard-body"></tbody>
     </table>
@@ -288,10 +288,8 @@
     <div id="submit-status"></div>
 </div>
 
-<!-- CloudBase Web SDK（按需引入） -->
-<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.js"></script>
-<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.auth.js"></script>
-<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.database.js"></script>
+<!-- CloudBase Web SDK v3（新版：PostgreSQL 模式） -->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/3.1.1/cloudbase.full.js"></script>
 
 <script>
     (function(){
@@ -630,99 +628,110 @@
                     : ("第 " + (n+1) + " 关 / 共 " + levels.length + " 关");
         }
 
-// ===== 腾讯云 CloudBase 在线排行榜 =====
+// ===== 腾讯云 CloudBase 在线排行榜（PG 模式 / SDK v3）=====
 // 国内访问极快，玩家匿名登录（无需手动注册账号）。
 // 配置步骤：
-//   1. 访问 https://console.cloud.tencent.com/tcb 注册并创建环境（需实名认证）
-//   2. 在环境中启用「数据库」，创建集合 "Score"
-//   3. 数据库权限 → Score → 安全规则设为：
-//        {
-//          "read":  true,
-//          "write": "doc._openid == auth.openid"
-//        }
-//      （允许所有用户读取；只能改自己的文档）
-//   4. 环境 → 安全配置 → 添加 Web 应用域名（你的 GitHub Pages 域名）
+//   1. 访问 https://console.cloud.tencent.com/tcb 创建环境（需实名认证）
+//   2. 在环境中开通 PostgreSQL 数据库
+//   3. 在 PG 中执行以下 SQL 建表（只需执行一次）：
+//
+//        CREATE TABLE IF NOT EXISTS leaderboard (
+//          id SERIAL PRIMARY KEY,
+//          player_name TEXT NOT NULL,
+//          score INTEGER NOT NULL,
+//          created_at TIMESTAMPTZ DEFAULT NOW()
+//        );
+//        GRANT SELECT, INSERT, UPDATE, DELETE ON leaderboard TO authenticated;
+//        GRANT USAGE, SELECT ON SEQUENCE leaderboard_id_seq TO authenticated;
+//        ALTER TABLE leaderboard ENABLE ROW LEVEL SECURITY;
+//        CREATE POLICY lb_select ON leaderboard FOR SELECT USING (true);
+//        CREATE POLICY lb_insert ON leaderboard FOR INSERT WITH CHECK (true);
+//
+//   4. 用户管理 → 登录方式 → 启用「匿名登录」
 //   5. 把下面 env 改成你的环境 ID
 const CB_CONFIG = {
-    env: "score-d4g9z7s3z872dc385"   // 例：level-devil-kids-xxxx
+    env: "score-d4g9z7s3z872dc385"
 };
 
 // CloudBase 全局初始化（懒加载）
-let _cbApp = null;
-let _cbDb  = null;
+let _cbApp  = null;
+let _cbAuth = null;
+let _cbDb   = null;
+
 async function getCloudBase() {
-    if (_cbApp) return { app: _cbApp, db: _cbDb };
+    if (_cbApp) return { app: _cbApp, auth: _cbAuth, db: _cbDb };
     if (!window.cloudbase) {
-        throw new Error("CloudBase SDK 未加载，请检查网络");
+        throw new Error("CloudBase SDK 未加载，请检查网络或刷新页面");
     }
     if (!CB_CONFIG.env || CB_CONFIG.env.startsWith("你的")) {
         throw new Error("请先在 CB_CONFIG 中填入你的 CloudBase 环境 ID");
     }
-    _cbApp = cloudbase.init({ env: CB_CONFIG.env });
-    // 匿名登录：玩家无需手动注册
+    _cbApp  = cloudbase.init({ env: CB_CONFIG.env });
+    _cbAuth = _cbApp.auth();
+    _cbDb   = _cbApp.rdb();   // PostgreSQL 关系型数据库
+    // 匿名登录（必须）
     try {
-        await _cbApp.auth().signInAnonymously();
+        const res = await _cbAuth.signInAnonymously();
+        if (res && res.error) throw res.error;
+        console.log("✅ CloudBase 匿名登录成功");
     } catch (e) {
-        throw new Error("匿名登录失败，请在 CloudBase 控制台 → 用户管理 → 登录方式 → 启用「匿名登录」");
+        const msg = (e && e.message) || String(e);
+        throw new Error(
+            "匿名登录失败：" + msg +
+            "\n请确认：1) 用户管理 → 登录方式 → 启用「匿名登录」"
+        );
     }
-    _cbDb = _cbApp.database();
-    return { app: _cbApp, db: _cbDb };
+    return { app: _cbApp, auth: _cbAuth, db: _cbDb };
 }
 
-// 确保 Score 集合存在（首次运行时自动创建）
-async function ensureCollection(db, name) {
-    try {
-        await db.collection(name).limit(1).get();
-    } catch (e) {
-        // 集合不存在时尝试创建
-        try {
-            await db.createCollection(name);
-            console.log("✅ 已自动创建集合 " + name);
-        } catch (e2) {
-            throw new Error("无法访问集合 " + name + "，请确认 CloudBase 控制台已启用数据库，且环境安全配置中已添加本 Web 域名。错误：" + (e2.message || e.message));
-        }
-    }
-}
-
-async function submitScoreToLeaderboard(name, time, deaths) {
+async function submitScoreToLeaderboard(name, time) {
     const { db } = await getCloudBase();
-    await ensureCollection(db, "Score");
-    return await db.collection("Score").add({
-        name:   String(name).slice(0, 20) || "anonymous",
-        time:   parseFloat(time),
-        deaths: parseInt(deaths) || 0,
-        mode:   trainingMode ? "train-L5" : "full",
-        createdAt: Date.now()
+    // time 是浮点秒数，score 字段定义为 INTEGER
+    // 将秒数四舍五入为整数毫秒×N（或直接取秒×1000），便于整数存储与排序
+    // 为了简单：score 直接存"完成时间（秒，保留 2 位小数转成整数毫秒）"
+    const score = Math.round(parseFloat(time) * 100); // 12.34 秒 → 1234
+    const { data, error } = await db.from("leaderboard").insert({
+        player_name: String(name).slice(0, 20) || "anonymous",
+        score: score
     });
+    if (error) {
+        const msg = (error.message || "").toLowerCase();
+        if (msg.includes("relation") || msg.includes("does not exist")) {
+            throw new Error("表 leaderboard 不存在。请在 CloudBase PG 中执行建表 SQL。");
+        }
+        if (msg.includes("policy") || msg.includes("permission") || msg.includes("denied")) {
+            throw new Error("数据库权限不足。请执行 GRANT 和 RLS 策略（见代码注释）。");
+        }
+        throw new Error("保存失败：" + (error.message || JSON.stringify(error)));
+    }
+    return data;
 }
 
 async function fetchLeaderboard() {
     const { db } = await getCloudBase();
-    await ensureCollection(db, "Score");
-    const _ = db.command;
-    // 取前 100 条，然后按 time 升序、deaths 升序手动取前 10
-    const res = await db.collection("Score")
-        .orderBy("time", "asc")
-        .orderBy("deaths", "asc")
-        .limit(100)
-        .get();
-    const list = res.data || [];
-    return list
-        .filter(s => typeof s.time === "number")
-        .slice(0, 10)
-        .map(s => ({
-            name:   s.name  || "anonymous",
-            time:   s.time,
-            deaths: s.deaths || 0,
-            date:   s.createdAt ? new Date(s.createdAt).toISOString() : ""
-        }));
+    const { data, error } = await db.from("leaderboard")
+        .select("*")
+        .order("score", { ascending: true })   // 时间越短 → score 越小 → 排前面
+        .limit(10);
+    if (error) {
+        const msg = (error.message || "").toLowerCase();
+        if (msg.includes("relation") || msg.includes("does not exist")) {
+            throw new Error("表 leaderboard 不存在。请在 CloudBase PG 中执行建表 SQL。");
+        }
+        throw new Error("读取失败：" + (error.message || JSON.stringify(error)));
+    }
+    return (data || []).map(row => ({
+        name: row.player_name || "anonymous",
+        time: (parseInt(row.score) || 0) / 100, // 反算回秒（保留 2 位小数）
+        date: row.created_at || ""
+    }));
 }
 
 function renderLeaderboard(scores) {
     const tbody = document.getElementById("leaderboard-body");
     tbody.innerHTML = "";
     if (scores.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" style="color:#9a9ab0;padding:18px;">暂无成绩</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="color:#9a9ab0;padding:18px;">暂无成绩</td></tr>`;
                 return;
             }
             scores.forEach((s, i) => {
@@ -730,7 +739,7 @@ function renderLeaderboard(scores) {
                 const date = new Date(s.date);
                 const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
                 const safeName = escapeHtml(s.name);
-                tr.innerHTML = `<td>${i+1}</td><td>${safeName}</td><td>${s.time.toFixed(2)}s</td><td>${s.deaths}</td><td>${dateStr}</td>`;
+                tr.innerHTML = `<td>${i+1}</td><td>${safeName}</td><td>${s.time.toFixed(2)}s</td><td>${dateStr}</td>`;
                 tbody.appendChild(tr);
             });
         }
@@ -754,7 +763,7 @@ function renderLeaderboard(scores) {
                 status.textContent = `共 ${scores.length} 条记录`;
             } catch (e) {
                 status.textContent = "❌ 加载失败：" + e.message;
-                tbody.innerHTML = `<tr><td colspan="5" style="color:#ff6b6b;padding:18px;">请检查 CB_CONFIG 配置或网络</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="4" style="color:#ff6b6b;padding:18px;">请检查 CB_CONFIG 配置或网络</td></tr>`;
             }
         }
 
@@ -768,8 +777,7 @@ function renderLeaderboard(scores) {
             const input = document.getElementById("submit-name");
             const status = document.getElementById("submit-status");
             summary.innerHTML =
-                `通关时间：<b style="color:#ffd93d;">${time.toFixed(2)} 秒</b><br>` +
-                `死亡次数：<b style="color:#ff6b6b;">${deaths} 次</b>`;
+                `通关时间：<b style="color:#ffd93d;">${time.toFixed(2)} 秒</b>`;
             input.value = "";
             status.textContent = "";
             status.className = "";
@@ -790,7 +798,7 @@ function renderLeaderboard(scores) {
             status.textContent = "提交中…";
             status.className = "";
             try {
-                await submitScoreToLeaderboard(name, totalTime, deathCount);
+                await submitScoreToLeaderboard(name, totalTime);
                 status.textContent = "✅ 提交成功！可在排行榜查看";
                 status.className = "success";
                 setTimeout(() => {
@@ -871,7 +879,7 @@ function renderLeaderboard(scores) {
 
         function updateTimerDisplay() {
             const bestLabel = bestTime === Infinity ? "--" : bestTime.toFixed(2);
-            document.getElementById("timer").textContent = "时间：" + totalTime.toFixed(2) + " 秒 | 最快：" + bestLabel + " 秒 | 死亡：" + deathCount + " 次";
+            document.getElementById("timer").textContent = "时间：" + totalTime.toFixed(2) + " 秒 | 最快：" + bestLabel + " 秒";
         }
 
         let respawnTimer = 0;

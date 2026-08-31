@@ -119,6 +119,127 @@
             #header h1 { font-size: 20px; }
             #win-screen h2 { font-size: 34px; }
         }
+
+        /* 排行榜弹窗 */
+        #leaderboard-screen, #submit-screen {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 20;
+            backdrop-filter: blur(6px);
+            padding: 20px;
+        }
+        #leaderboard-screen.show, #submit-screen.show {
+            display: flex;
+        }
+        #leaderboard-screen h2 {
+            font-size: 36px;
+            color: #ffd93d;
+            margin-bottom: 16px;
+            text-shadow: 0 3px 0 #b37b00;
+        }
+        #leaderboard-table {
+            border-collapse: collapse;
+            width: min(90vw, 560px);
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            overflow: hidden;
+            margin-bottom: 18px;
+        }
+        #leaderboard-table th, #leaderboard-table td {
+            padding: 10px 14px;
+            text-align: center;
+            color: #eee;
+            font-size: 16px;
+            border-bottom: 1px solid rgba(255,255,255,0.08);
+        }
+        #leaderboard-table th {
+            background: rgba(255,217,61,0.18);
+            color: #ffd93d;
+            font-weight: 700;
+        }
+        #leaderboard-table tr:nth-child(1) td { color: #ffd93d; font-weight: 700; }
+        #leaderboard-table tr:nth-child(2) td { color: #e0e0e0; }
+        #leaderboard-table tr:nth-child(3) td { color: #cd7f32; }
+        #leaderboard-table tr.me td { background: rgba(126,200,227,0.15); }
+        #leaderboard-status {
+            color: #9a9ab0;
+            font-size: 15px;
+            margin-bottom: 12px;
+            min-height: 22px;
+        }
+        #leaderboard-close-btn {
+            padding: 10px 36px;
+            font-size: 18px;
+            background: #4a4a6a;
+            color: white;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+        }
+        #leaderboard-close-btn:hover { background: #6a6a8a; }
+
+        /* 提交成绩弹窗 */
+        #submit-screen h2 {
+            font-size: 38px;
+            color: #ffd93d;
+            margin-bottom: 14px;
+            text-shadow: 0 3px 0 #b37b00;
+        }
+        #submit-summary {
+            color: #fff;
+            font-size: 18px;
+            margin-bottom: 18px;
+            text-align: center;
+            line-height: 1.6;
+        }
+        #submit-name {
+            width: min(80vw, 320px);
+            padding: 12px 18px;
+            font-size: 18px;
+            border: 2px solid #ffd93d;
+            border-radius: 24px;
+            background: rgba(0,0,0,0.3);
+            color: #fff;
+            text-align: center;
+            outline: none;
+            margin-bottom: 16px;
+        }
+        #submit-name:focus {
+            border-color: #ff6b6b;
+            box-shadow: 0 0 0 3px rgba(255,107,107,0.25);
+        }
+        #submit-confirm-btn, #submit-cancel-btn {
+            padding: 10px 28px;
+            font-size: 17px;
+            border: none;
+            border-radius: 30px;
+            cursor: pointer;
+            margin: 4px;
+            font-weight: 600;
+        }
+        #submit-confirm-btn {
+            background: #ff6b6b;
+            color: white;
+            box-shadow: 0 4px 0 #aa2e2e;
+        }
+        #submit-confirm-btn:hover { background: #ff8787; }
+        #submit-confirm-btn:active { transform: translateY(2px); box-shadow: 0 2px 0 #aa2e2e; }
+        #submit-cancel-btn {
+            background: #4a4a6a;
+            color: #ddd;
+        }
+        #submit-status {
+            margin-top: 14px;
+            font-size: 14px;
+            min-height: 20px;
+        }
+        #submit-status.success { color: #7ec8e3; }
+        #submit-status.error { color: #ff6b6b; }
     </style>
 </head>
 <body>
@@ -127,6 +248,7 @@
     <div class="level-info" id="level-info">第 1 关 / 共 5 关</div>
 </div>
 <div id="timer">时间：0.00 秒</div>
+<button id="leaderboard-btn" style="position:absolute;right:20px;top:20px;padding:8px 18px;font-size:16px;font-weight:600;color:#ffd93d;background:rgba(0,0,0,0.35);border:2px solid #ffd93d;border-radius:20px;cursor:pointer;">🏆 排行榜</button>
 <canvas id="game" width="800" height="500"></canvas>
 <div id="footer">← → ↑ / WASD 移动 · 空格 / ↑ 跳跃 · 小心尖刺！<button id="music-btn" style="margin-left:14px;padding:4px 12px;border:1px solid #ffd93d;background:rgba(255,217,61,0.15);color:#ffd93d;border-radius:14px;cursor:pointer;font-size:13px;">🔊 音乐</button></div>
 
@@ -141,6 +263,36 @@
     <button id="restart-btn">🔄 重新冒险</button>
 </div>
 
+<!-- 排行榜弹窗 -->
+<div id="leaderboard-screen">
+    <h2>🏆 全球排行榜 Top 10</h2>
+    <div id="leaderboard-status">加载中...</div>
+    <table id="leaderboard-table">
+        <thead>
+            <tr><th>排名</th><th>姓名</th><th>时间</th><th>死亡</th><th>日期</th></tr>
+        </thead>
+        <tbody id="leaderboard-body"></tbody>
+    </table>
+    <button id="leaderboard-close-btn">关闭</button>
+</div>
+
+<!-- 提交成绩弹窗 -->
+<div id="submit-screen">
+    <h2>🎉 恭喜通关！</h2>
+    <div id="submit-summary"></div>
+    <input type="text" id="submit-name" maxlength="20" placeholder="输入你的姓名/昵称" />
+    <div>
+        <button id="submit-confirm-btn">📤 提交成绩</button>
+        <button id="submit-cancel-btn">跳过</button>
+    </div>
+    <div id="submit-status"></div>
+</div>
+
+<!-- CloudBase Web SDK（按需引入） -->
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.js"></script>
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.auth.js"></script>
+<script src="https://static.cloudbase.net/cloudbase-js-sdk/1.7.1/cloudbase.database.js"></script>
+
 <script>
     (function(){
         const canvas = document.getElementById("game");
@@ -150,6 +302,9 @@
         let currentLevel = 0, deathCount = 0, gameWon = false;
         let keys = {};
         let player, platforms, spikes, movingPlatforms, door;
+        // ===== 训练模式：true=只玩第5关循环特训；false=正常全5关通关 =====
+        // 默认开启，方便第5关特训。按 T 键切换并刷新页面恢复/进入训练模式。
+        let trainingMode = localStorage.getItem("levelDevilTrainMode") === "1";
         let debugFrame = 0; // 调试用帧计数
         let prevOnMoving = null; // 上一帧所在的移动平台索引
         let startTime = Date.now();
@@ -374,6 +529,12 @@
         document.addEventListener("keydown", e => {
             keys[e.code] = true;
             if (["Space","ArrowUp","ArrowDown","ArrowLeft","ArrowRight"].includes(e.code)) e.preventDefault();
+            // T 键：切换训练模式（第5关特训 ↔ 正常全5关），立即刷新页面应用
+            if (e.code === "KeyT") {
+                trainingMode = !trainingMode;
+                localStorage.setItem("levelDevilTrainMode", trainingMode ? "1" : "0");
+                location.reload();
+            }
         });
         document.addEventListener("keyup", e => {
             keys[e.code] = false;
@@ -464,7 +625,183 @@
             door = {...L.door};
             gameWon = false;
             document.getElementById("level-info").textContent =
-                "第 " + (n+1) + " 关 / 共 " + levels.length + " 关";
+                (trainingMode && n === 4)
+                    ? "🎯 特训模式：第 5 关（按 T 恢复正常）"
+                    : ("第 " + (n+1) + " 关 / 共 " + levels.length + " 关");
+        }
+
+// ===== 腾讯云 CloudBase 在线排行榜 =====
+// 国内访问极快，玩家匿名登录（无需手动注册账号）。
+// 配置步骤：
+//   1. 访问 https://console.cloud.tencent.com/tcb 注册并创建环境（需实名认证）
+//   2. 在环境中启用「数据库」，创建集合 "Score"
+//   3. 数据库权限 → Score → 安全规则设为：
+//        {
+//          "read":  true,
+//          "write": "doc._openid == auth.openid"
+//        }
+//      （允许所有用户读取；只能改自己的文档）
+//   4. 环境 → 安全配置 → 添加 Web 应用域名（你的 GitHub Pages 域名）
+//   5. 把下面 env 改成你的环境 ID
+const CB_CONFIG = {
+    env: "score-d4g9z7s3z872dc385"   // 例：level-devil-kids-xxxx
+};
+
+// CloudBase 全局初始化（懒加载）
+let _cbApp = null;
+let _cbDb  = null;
+async function getCloudBase() {
+    if (_cbApp) return { app: _cbApp, db: _cbDb };
+    if (!window.cloudbase) {
+        throw new Error("CloudBase SDK 未加载，请检查网络");
+    }
+    if (!CB_CONFIG.env || CB_CONFIG.env.startsWith("你的")) {
+        throw new Error("请先在 CB_CONFIG 中填入你的 CloudBase 环境 ID");
+    }
+    _cbApp = cloudbase.init({ env: CB_CONFIG.env });
+    // 匿名登录：玩家无需手动注册
+    try {
+        await _cbApp.auth().signInAnonymously();
+    } catch (e) {
+        throw new Error("匿名登录失败，请在 CloudBase 控制台 → 用户管理 → 登录方式 → 启用「匿名登录」");
+    }
+    _cbDb = _cbApp.database();
+    return { app: _cbApp, db: _cbDb };
+}
+
+// 确保 Score 集合存在（首次运行时自动创建）
+async function ensureCollection(db, name) {
+    try {
+        await db.collection(name).limit(1).get();
+    } catch (e) {
+        // 集合不存在时尝试创建
+        try {
+            await db.createCollection(name);
+            console.log("✅ 已自动创建集合 " + name);
+        } catch (e2) {
+            throw new Error("无法访问集合 " + name + "，请确认 CloudBase 控制台已启用数据库，且环境安全配置中已添加本 Web 域名。错误：" + (e2.message || e.message));
+        }
+    }
+}
+
+async function submitScoreToLeaderboard(name, time, deaths) {
+    const { db } = await getCloudBase();
+    await ensureCollection(db, "Score");
+    return await db.collection("Score").add({
+        name:   String(name).slice(0, 20) || "anonymous",
+        time:   parseFloat(time),
+        deaths: parseInt(deaths) || 0,
+        mode:   trainingMode ? "train-L5" : "full",
+        createdAt: Date.now()
+    });
+}
+
+async function fetchLeaderboard() {
+    const { db } = await getCloudBase();
+    await ensureCollection(db, "Score");
+    const _ = db.command;
+    // 取前 100 条，然后按 time 升序、deaths 升序手动取前 10
+    const res = await db.collection("Score")
+        .orderBy("time", "asc")
+        .orderBy("deaths", "asc")
+        .limit(100)
+        .get();
+    const list = res.data || [];
+    return list
+        .filter(s => typeof s.time === "number")
+        .slice(0, 10)
+        .map(s => ({
+            name:   s.name  || "anonymous",
+            time:   s.time,
+            deaths: s.deaths || 0,
+            date:   s.createdAt ? new Date(s.createdAt).toISOString() : ""
+        }));
+}
+
+function renderLeaderboard(scores) {
+    const tbody = document.getElementById("leaderboard-body");
+    tbody.innerHTML = "";
+    if (scores.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" style="color:#9a9ab0;padding:18px;">暂无成绩</td></tr>`;
+                return;
+            }
+            scores.forEach((s, i) => {
+                const tr = document.createElement("tr");
+                const date = new Date(s.date);
+                const dateStr = `${date.getMonth()+1}/${date.getDate()}`;
+                const safeName = escapeHtml(s.name);
+                tr.innerHTML = `<td>${i+1}</td><td>${safeName}</td><td>${s.time.toFixed(2)}s</td><td>${s.deaths}</td><td>${dateStr}</td>`;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function escapeHtml(str) {
+            return String(str).replace(/[&<>"']/g, c => ({
+                "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+            }[c]));
+        }
+
+        async function openLeaderboard() {
+            const screen = document.getElementById("leaderboard-screen");
+            const status = document.getElementById("leaderboard-status");
+            const tbody = document.getElementById("leaderboard-body");
+            screen.classList.add("show");
+            status.textContent = "加载中…";
+            tbody.innerHTML = "";
+            try {
+                const scores = await fetchLeaderboard();
+                renderLeaderboard(scores);
+                status.textContent = `共 ${scores.length} 条记录`;
+            } catch (e) {
+                status.textContent = "❌ 加载失败：" + e.message;
+                tbody.innerHTML = `<tr><td colspan="5" style="color:#ff6b6b;padding:18px;">请检查 CB_CONFIG 配置或网络</td></tr>`;
+            }
+        }
+
+        function closeLeaderboard() {
+            document.getElementById("leaderboard-screen").classList.remove("show");
+        }
+
+        function openSubmitScreen(time, deaths) {
+            const screen = document.getElementById("submit-screen");
+            const summary = document.getElementById("submit-summary");
+            const input = document.getElementById("submit-name");
+            const status = document.getElementById("submit-status");
+            summary.innerHTML =
+                `通关时间：<b style="color:#ffd93d;">${time.toFixed(2)} 秒</b><br>` +
+                `死亡次数：<b style="color:#ff6b6b;">${deaths} 次</b>`;
+            input.value = "";
+            status.textContent = "";
+            status.className = "";
+            screen.classList.add("show");
+            setTimeout(() => input.focus(), 100);
+        }
+
+        function closeSubmitScreen() {
+            document.getElementById("submit-screen").classList.remove("show");
+        }
+
+        async function confirmSubmit() {
+            const input = document.getElementById("submit-name");
+            const status = document.getElementById("submit-status");
+            const btn = document.getElementById("submit-confirm-btn");
+            const name = (input.value || "").trim() || "anonymous";
+            btn.disabled = true;
+            status.textContent = "提交中…";
+            status.className = "";
+            try {
+                await submitScoreToLeaderboard(name, totalTime, deathCount);
+                status.textContent = "✅ 提交成功！可在排行榜查看";
+                status.className = "success";
+                setTimeout(() => {
+                    closeSubmitScreen();
+                    openLeaderboard();
+                }, 1200);
+            } catch (e) {
+                status.textContent = "❌ 提交失败：" + e.message + "（请检查 CB_CONFIG）";
+                status.className = "error";
+                btn.disabled = false;
+            }
         }
 
         function showWinScreen() {
@@ -528,6 +865,8 @@
             document.getElementById("win-best-deaths").textContent = bestDeathsText;
             document.getElementById("win-deaths-compare").textContent = deathsCompareText;
             document.getElementById("win-screen").classList.add("show");
+            // 弹出提交成绩对话框
+            setTimeout(() => openSubmitScreen(totalTime, deathCount), 600);
         }
 
         function updateTimerDisplay() {
@@ -742,7 +1081,17 @@
 
             // ---- 到达门 ----
             if (collides(player, door)) {
-                loadLevel(currentLevel + 1);
+                // 训练模式下通关后重新进入第5关循环特训
+                if (trainingMode) {
+                    deathCount = 0;
+                    countdownTimer = 0;
+                    startTime = Date.now();
+                    totalTime = 0;
+                    timerRunning = true;
+                    loadLevel(4);
+                } else {
+                    loadLevel(currentLevel + 1);
+                }
                 return;
             }
         }
@@ -975,10 +1324,19 @@
             startTime = Date.now();
             totalTime = 0;
             timerRunning = true;
-            loadLevel(0);
+            loadLevel(trainingMode ? 4 : 0);
         });
 
-        loadLevel(0);
+        // 排行榜相关按钮
+        document.getElementById("leaderboard-btn").addEventListener("click", openLeaderboard);
+        document.getElementById("leaderboard-close-btn").addEventListener("click", closeLeaderboard);
+        document.getElementById("submit-confirm-btn").addEventListener("click", confirmSubmit);
+        document.getElementById("submit-cancel-btn").addEventListener("click", closeSubmitScreen);
+        document.getElementById("submit-name").addEventListener("keydown", e => {
+            if (e.key === "Enter") confirmSubmit();
+        });
+
+        loadLevel(trainingMode ? 4 : 0);
         loop();
     })();
 </script>

@@ -267,7 +267,35 @@
     z-index: 100;
     pointer-events: none;
     user-select: text;
-">v3.2 · SDK 检测中…</div>
+">加载中…</div>
+
+<!-- CloudBase 测试面板 -->
+<div id="cb-test-panel" style="
+    position: fixed;
+    bottom: 4px;
+    left: 8px;
+    background: rgba(0,0,0,0.85);
+    color: #eee;
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid #4a4a6a;
+    font-size: 12px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    z-index: 100;
+    min-width: 200px;
+    line-height: 1.6;
+">
+    <div style="color:#ffd93d;font-weight:bold;margin-bottom:6px;">🧪 CloudBase 测试</div>
+    <div style="margin-bottom:6px;color:#9a9ab0;">
+        表格：<span style="color:#fff;">game_scores</span>
+    </div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;">
+        <button id="cb-test-insert" style="padding:4px 10px;font-size:12px;background:#ff6b6b;color:white;border:none;border-radius:8px;cursor:pointer;">📝 插入测试</button>
+        <button id="cb-test-query" style="padding:4px 10px;font-size:12px;background:#4a90e2;color:white;border:none;border-radius:8px;cursor:pointer;">🔍 查询测试</button>
+        <button id="cb-test-clear" style="padding:4px 10px;font-size:12px;background:#666;color:white;border:none;border-radius:8px;cursor:pointer;">🗑️ 清日志</button>
+    </div>
+    <div id="cb-test-log" style="margin-top:8px;max-height:200px;overflow-y:auto;font-size:11px;color:#7ec8e3;white-space:pre-wrap;word-break:break-all;"></div>
+</div>
 
 <div id="win-screen">
     <h2 id="win-text">🎉 全部通关！</h2>
@@ -306,7 +334,10 @@
 </div>
 
 <!-- CloudBase Web SDK v3（新版：PostgreSQL 模式） -->
-<script src="https://static.cloudbase.net/cloudbase-js-sdk/3.1.1/cloudbase.full.js"></script>
+<script
+    src="https://static.cloudbase.net/cloudbase-js-sdk/latest/cloudbase.full.js"
+    onerror="window.__cbScriptError='cloudbase.full.js 加载失败'">
+</script>
 
 <script>
     (function(){
@@ -315,7 +346,7 @@
         const W = canvas.width, H = canvas.height;
         const GRAVITY = 0.6;
         // ===== 版本号：每次修改文件请同步改这里 =====
-        const BUILD_VERSION = "v3.2 · 2026-08-31 · CloudBase PG 接入 + 调试面板";
+        const BUILD_VERSION = "v3.5 · 2026-08-31 · 诊断信息增强";
         let currentLevel = 0, deathCount = 0, gameWon = false;
         let keys = {};
         let player, platforms, spikes, movingPlatforms, door;
@@ -679,25 +710,55 @@ let _cbDb   = null;
 
 async function getCloudBase() {
     if (_cbApp) return { app: _cbApp, auth: _cbAuth, db: _cbDb };
+    if (window.__cbScriptError) {
+        throw new Error("SDK 脚本加载失败：" + window.__cbScriptError + "（可能网络问题或 CDN 不可达）");
+    }
     if (!window.cloudbase) {
-        throw new Error("CloudBase SDK 未加载，请检查网络或刷新页面");
+        throw new Error("CloudBase SDK 未加载。请检查网络，强制刷新页面（Ctrl+Shift+R），或查看版本面板的 CDN 地址");
     }
     if (!CB_CONFIG.env || CB_CONFIG.env.startsWith("你的")) {
         throw new Error("请先在 CB_CONFIG 中填入你的 CloudBase 环境 ID");
     }
+    console.log("🌐 初始化 CloudBase，env=" + CB_CONFIG.env);
     _cbApp  = cloudbase.init({ env: CB_CONFIG.env });
     _cbAuth = _cbApp.auth();
-    _cbDb   = _cbApp.rdb();   // PostgreSQL 关系型数据库
+    // 检测 rdb 是否存在（PG 模式）
+    if (typeof _cbApp.rdb === "function") {
+        _cbDb = _cbApp.rdb();
+        console.log("✅ 使用 PostgreSQL (rdb) 模式");
+    } else if (typeof _cbApp.database === "function") {
+        _cbDb = _cbApp.database();
+        console.log("⚠️ 使用 NoSQL (database) 模式 — PG 不可用");
+    } else {
+        throw new Error("SDK 中未找到 rdb() 或 database() 方法。请确认 SDK 版本支持数据库。");
+    }
     // 匿名登录（必须）
     try {
         const res = await _cbAuth.signInAnonymously();
         if (res && res.error) throw res.error;
-        console.log("✅ CloudBase 匿名登录成功");
+        if (res && res.userInfo) {
+            console.log("✅ CloudBase 匿名登录成功，userInfo:", res.userInfo);
+        } else {
+            console.log("✅ CloudBase 匿名登录成功");
+        }
     } catch (e) {
-        const msg = (e && e.message) || String(e);
+        const msg = (e && e.message) || (e && e.errMsg) || String(e);
+        // 收集诊断信息
+        const diag =
+            "\n\n📋 诊断信息：\n" +
+            "• 当前 hostname: " + location.hostname + "\n" +
+            "• 当前 protocol: " + location.protocol + "\n" +
+            "• 当前 origin: " + location.origin + "\n" +
+            "• env ID: " + CB_CONFIG.env + "\n" +
+            "• User-Agent: " + navigator.userAgent.slice(0, 80) + "\n";
         throw new Error(
-            "匿名登录失败：" + msg +
-            "\n请确认：1) 用户管理 → 登录方式 → 启用「匿名登录」"
+            "匿名登录失败：" + msg + diag +
+            "\n排查清单：\n" +
+            "1) CloudBase 控制台 → 用户管理 → 登录方式 → 确认「匿名登录」已启用\n" +
+            "2) CloudBase 控制台 → 环境 → 安全配置 → 登录授权域名中添加 " + location.hostname + "\n" +
+            "3) 强制刷新页面（Ctrl+Shift+R）清除缓存\n" +
+            "4) F12 控制台查看完整错误堆栈\n" +
+            "5) 如 hostname 为空，说明你是用 file:// 打开的，需要通过 HTTP 服务访问"
         );
     }
     return { app: _cbApp, auth: _cbAuth, db: _cbDb };
@@ -1377,11 +1438,103 @@ function renderLeaderboard(scores) {
             const scriptTag = document.querySelector('script[src*="cloudbase"]');
             const scriptSrc = scriptTag ? scriptTag.src : "未找到";
             el.innerHTML =
-                `v3.1 · SDK ${sdkLoaded ? "✅ 已加载" : "❌ 未加载"} (${sdkVer})<br>` +
+                `${BUILD_VERSION}<br>` +
+                `SDK: ${sdkLoaded ? "✅ 已加载" : "❌ 未加载"} (${sdkVer})<br>` +
                 `CDN: <span style="color:#9a9ab0;">${scriptSrc}</span><br>` +
                 `env: ${cfgOk ? "✅ 已配置" : "❌ 未配置"}`;
             el.style.color = sdkLoaded && cfgOk ? "#7ec8e3" : "#ff6b6b";
         })();
+
+        // ===== CloudBase 测试面板 =====
+        function cbLog(msg, type) {
+            const el = document.getElementById("cb-test-log");
+            if (!el) return;
+            const ts = new Date().toLocaleTimeString();
+            const color = type === "err" ? "#ff6b6b" : type === "ok" ? "#7ec8e3" : "#aaa";
+            el.innerHTML += `<div style="color:${color};margin-top:2px;">[${ts}] ${escapeHtml(String(msg))}</div>`;
+            el.scrollTop = el.scrollHeight;
+        }
+        async function cbTestInsert() {
+            cbLog("开始插入测试数据到 game_scores…");
+            try {
+                const { db } = await getCloudBase();
+                cbLog("✅ CloudBase 已连接，db 类型：" + (db.constructor ? db.constructor.name : typeof db));
+                // 自动检测是 PG (rdb) 还是 NoSQL (database)
+                if (typeof db.from === "function") {
+                    // PG 模式
+                    const testName = "test_" + Date.now();
+                    const testScore = Math.floor(Math.random() * 10000);
+                    cbLog(`📝 PG 模式：插入 { player_name: "${testName}", score: ${testScore} }`);
+                    const { data, error } = await db.from("game_scores").insert({
+                        player_name: testName,
+                        score: testScore
+                    });
+                    if (error) {
+                        cbLog("❌ 插入失败：" + (error.message || JSON.stringify(error)), "err");
+                    } else {
+                        cbLog("✅ 插入成功！返回：" + JSON.stringify(data).slice(0, 200), "ok");
+                    }
+                } else if (typeof db.collection === "function") {
+                    // NoSQL 模式
+                    const testName = "test_" + Date.now();
+                    cbLog(`📝 NoSQL 模式：db.collection("game_scores").add({...})`);
+                    try {
+                        const res = await db.collection("game_scores").add({
+                            player_name: testName,
+                            score: Math.floor(Math.random() * 10000)
+                        });
+                        cbLog("✅ 插入成功！返回：" + JSON.stringify(res).slice(0, 200), "ok");
+                    } catch (e) {
+                        cbLog("❌ 插入失败：" + e.message, "err");
+                    }
+                } else {
+                    cbLog("❌ db 上找不到 from() 或 collection() 方法", "err");
+                }
+            } catch (e) {
+                cbLog("❌ " + e.message, "err");
+            }
+        }
+        async function cbTestQuery() {
+            cbLog("开始查询 game_scores…");
+            try {
+                const { db } = await getCloudBase();
+                if (typeof db.from === "function") {
+                    cbLog("🔍 PG 模式：SELECT * FROM game_scores ORDER BY score ASC LIMIT 5");
+                    const { data, error } = await db.from("game_scores")
+                        .select("*")
+                        .order("score", { ascending: true })
+                        .limit(5);
+                    if (error) {
+                        cbLog("❌ 查询失败：" + (error.message || JSON.stringify(error)), "err");
+                    } else {
+                        cbLog("✅ 查询到 " + (data ? data.length : 0) + " 条记录", "ok");
+                        if (data && data.length > 0) {
+                            cbLog("📄 前 5 条：" + JSON.stringify(data, null, 0).slice(0, 500), "ok");
+                        }
+                    }
+                } else if (typeof db.collection === "function") {
+                    cbLog("🔍 NoSQL 模式：db.collection(\"game_scores\").limit(5).get()");
+                    try {
+                        const res = await db.collection("game_scores").limit(5).get();
+                        const list = res.data || [];
+                        cbLog("✅ 查询到 " + list.length + " 条记录", "ok");
+                        if (list.length > 0) cbLog("📄 前 5 条：" + JSON.stringify(list).slice(0, 500), "ok");
+                    } catch (e) {
+                        cbLog("❌ 查询失败：" + e.message, "err");
+                    }
+                }
+            } catch (e) {
+                cbLog("❌ " + e.message, "err");
+            }
+        }
+        function cbTestClear() {
+            document.getElementById("cb-test-log").innerHTML = "";
+            cbLog("日志已清空");
+        }
+        // 绑定按钮
+        document.getElementById("cb-test-insert").addEventListener("click", cbTestInsert);
+        document.getElementById("cb-test-query").addEventListener("click", cbTestQuery);
+        document.getElementById("cb-test-clear").addEventListener("click", cbTestClear);
     })();
 </script>
 </body>

@@ -252,6 +252,23 @@
 <canvas id="game" width="800" height="500"></canvas>
 <div id="footer">← → ↑ / WASD 移动 · 空格 / ↑ 跳跃 · 小心尖刺！<button id="music-btn" style="margin-left:14px;padding:4px 12px;border:1px solid #ffd93d;background:rgba(255,217,61,0.15);color:#ffd93d;border-radius:14px;cursor:pointer;font-size:13px;">🔊 音乐</button></div>
 
+<!-- 版本 / 调试信息面板 -->
+<div id="version-info" style="
+    position: fixed;
+    bottom: 4px;
+    right: 8px;
+    font-size: 11px;
+    color: #6a6a8a;
+    background: rgba(0,0,0,0.5);
+    padding: 4px 10px;
+    border-radius: 10px;
+    font-family: 'Consolas', 'Monaco', monospace;
+    line-height: 1.5;
+    z-index: 100;
+    pointer-events: none;
+    user-select: text;
+">v3.2 · SDK 检测中…</div>
+
 <div id="win-screen">
     <h2 id="win-text">🎉 全部通关！</h2>
     <div id="win-time" style="font-size:24px;color:#fff;margin-bottom:8px;">通关时间：0.00 秒</div>
@@ -297,6 +314,8 @@
         const ctx = canvas.getContext("2d");
         const W = canvas.width, H = canvas.height;
         const GRAVITY = 0.6;
+        // ===== 版本号：每次修改文件请同步改这里 =====
+        const BUILD_VERSION = "v3.2 · 2026-08-31 · CloudBase PG 接入 + 调试面板";
         let currentLevel = 0, deathCount = 0, gameWon = false;
         let keys = {};
         let player, platforms, spikes, movingPlatforms, door;
@@ -1346,6 +1365,23 @@ function renderLeaderboard(scores) {
 
         loadLevel(trainingMode ? 4 : 0);
         loop();
+
+        // ===== 版本/SDK 检测 =====
+        (function showVersionInfo() {
+            const el = document.getElementById("version-info");
+            if (!el) return;
+            const sdkLoaded = typeof window.cloudbase !== "undefined";
+            const sdkVer = (window.cloudbase && (cloudbase.SDK_NAME || cloudbase.version)) || "未知";
+            const cfgOk = (typeof CB_CONFIG !== "undefined") && CB_CONFIG.env && !CB_CONFIG.env.startsWith("你的");
+            // 检测 script 标签加载情况
+            const scriptTag = document.querySelector('script[src*="cloudbase"]');
+            const scriptSrc = scriptTag ? scriptTag.src : "未找到";
+            el.innerHTML =
+                `v3.1 · SDK ${sdkLoaded ? "✅ 已加载" : "❌ 未加载"} (${sdkVer})<br>` +
+                `CDN: <span style="color:#9a9ab0;">${scriptSrc}</span><br>` +
+                `env: ${cfgOk ? "✅ 已配置" : "❌ 未配置"}`;
+            el.style.color = sdkLoaded && cfgOk ? "#7ec8e3" : "#ff6b6b";
+        })();
     })();
 </script>
 </body>
